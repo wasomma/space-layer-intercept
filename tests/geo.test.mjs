@@ -6,6 +6,7 @@ import {
   latLonToEcef,
   latLonToVector3,
   vector3ToLatLon,
+  ecefToLatLonAlt,
   earthRotationAngle,
   ecefToEci,
   eciToEcef,
@@ -24,6 +25,20 @@ test('latLonToEcef uses radius R_EARTH + alt and the Y-up convention', () => {
   const site = latLonToVector3(50, 90, R_EARTH);
   const back = vector3ToLatLon(site);
   assert.ok(Math.abs(back.lat - 50) < 1e-9 && Math.abs(back.lon - 90) < 1e-9);
+});
+
+test('ecefToLatLonAlt inverts latLonToEcef', () => {
+  for (const [lat, lon, alt] of [
+    [50, 90, 0],
+    [-33.5, -70.25, 1196],
+    [0, 179.5, 10000],
+    [89.9, -45, 0.0018],
+  ]) {
+    const back = ecefToLatLonAlt(latLonToEcef(lat, lon, alt));
+    assert.ok(Math.abs(back.lat - lat) < 1e-9, `lat ${back.lat}`);
+    assert.ok(Math.abs(back.lon - lon) < 1e-9, `lon ${back.lon}`);
+    assert.ok(Math.abs(back.altKm - alt) < 1e-9, `alt ${back.altKm}`);
+  }
 });
 
 test('ecefToEci then eciToEcef is the identity, and rotation is eastward', () => {

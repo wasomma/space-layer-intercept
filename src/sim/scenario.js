@@ -822,25 +822,29 @@ export function buildScenario(params = DEFAULT_PARAMS) {
   }
   if (!relay) throw new Error('buildScenario: no relay with line of sight to both ends');
 
-  // Events (5.9), simulation time, in time order.
+  // Events (5.9), simulation time, in time order. Each has a stable id for the live link.
   const events = [
-    { t: -60, text: 'Constellation nominal' },
-    { t: -10, text: 'Launcher erected' },
-    { t: -0.5, text: 'Canister open' },
-    { t: 0, text: 'Ignition' },
-    { t: tDetect, text: 'Sensor sat: launch detected' },
-    { t: tTrack, text: 'Track established' },
-    { t: tLink1, text: 'Handoff to relay' },
-    { t: tLink2, text: 'Handoff to interceptor sat' },
-    { t: tAssign, text: `Solution: dV ${(impulse.length() + trim.length()).toFixed(2)} km/s, intercept ${fmtClock(tIntercept)}` },
-    { t: tBurnout, text: 'Burnout' },
-    { t: tRelease, text: 'Interceptor released' },
-    { t: tIntercept, text: 'Intercept' },
-    { t: tIntercept + 4, text: 'Engagement complete' },
+    { t: -60, id: 'CONSTELLATION', text: 'Constellation nominal' },
+    { t: -10, id: 'ERECTED', text: 'Launcher erected' },
+    { t: -0.5, id: 'CANISTER_OPEN', text: 'Canister open' },
+    { t: 0, id: 'IGNITION', text: 'Ignition' },
+    { t: tDetect, id: 'DETECT', text: 'Sensor sat: launch detected' },
+    { t: tTrack, id: 'TRACK', text: 'Track established' },
+    { t: tLink1, id: 'HANDOFF_RELAY', text: 'Handoff to relay' },
+    { t: tLink2, id: 'HANDOFF_INTERCEPTOR', text: 'Handoff to interceptor sat' },
+    {
+      t: tAssign,
+      id: 'ASSIGN',
+      text: `Solution: dV ${(impulse.length() + trim.length()).toFixed(2)} km/s, intercept ${fmtClock(tIntercept)}`,
+    },
+    { t: tBurnout, id: 'BURNOUT', text: 'Burnout' },
+    { t: tRelease, id: 'RELEASE', text: 'Interceptor released' },
+    { t: tIntercept, id: 'INTERCEPT', text: 'Intercept' },
+    { t: tIntercept + 4, id: 'COMPLETE', text: 'Engagement complete' },
   ]
     .map((e, i) => ({ ...e, i }))
     .sort((p, q) => p.t - q.t || p.i - q.i)
-    .map(({ t, text }) => ({ t, text }));
+    .map(({ t, id, text }) => ({ t, id, text }));
 
   return {
     params,

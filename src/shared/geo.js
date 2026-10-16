@@ -56,6 +56,16 @@ export function latLonToEcef(lat, lon, altKm = 0, target = new Vector3()) {
 }
 
 /**
+ * Inverse of latLonToEcef: { lat, lon } in degrees and altKm above the sphere R_EARTH.
+ * @param {Vector3} v ECEF, km
+ * @returns {{ lat: number, lon: number, altKm: number }}
+ */
+export function ecefToLatLonAlt(v) {
+  const { lat, lon, radius } = vector3ToLatLon(v);
+  return { lat, lon, altKm: radius - R_EARTH };
+}
+
+/**
  * Earth rotation angle theta(t) = OMEGA_EARTH * t, radians, zero at ignition.
  * @param {number} t seconds from ignition
  */
