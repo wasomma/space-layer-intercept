@@ -1,0 +1,759 @@
+/* HUD overlay, transport and 3D label styling.
+ *
+ * Colours come only from the palette custom properties (--c-bg, --c-text, ...) that
+ * createHud() writes onto :root from cssVars() in src/shared/palette.js. Translucent
+ * fills are color-mix() of those variables.
+ *
+ * The HUD root is a full-viewport, click-through layer: pointer-events are enabled only on
+ * the controls (buttons, beat markers, the seek track), so drags anywhere else still reach
+ * the canvas for free-orbit mode.
+ *
+ * Panels: title top left; warp badge, mission clock and beat label top right; event log
+ * bottom left; transport bottom centre; readouts bottom right; summary card centre.
+ */
+
+.hud-root {
+  --hud-font: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+  --hud-gutter: 20px;
+  --hud-panel-bg: color-mix(in srgb, var(--c-bg) 55%, transparent);
+  --hud-panel-border: var(--c-graticule);
+  --hud-transport-w: min(820px, calc(100vw - 2 * var(--hud-gutter)));
+  --hud-transport-h: 84px;
+  --hud-readouts-w: min(220px, calc(100vw - 2 * var(--hud-gutter)));
+
+  position: fixed;
+  /* Clear of a phone's notch and home bar (the insets are 0 elsewhere). */
+  inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+    env(safe-area-inset-left, 0px);
+  z-index: 10;
+  overflow: hidden;
+  pointer-events: none;
+  font-family: var(--hud-font);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--c-text);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.hud-root *,
+.hud-root *::before,
+.hud-root *::after {
+  box-sizing: border-box;
+}
+
+.hud-panel {
+  background: var(--hud-panel-bg);
+  border: 1px solid var(--hud-panel-border);
+  border-radius: 2px;
+}
+
+/* ---- top left: title ------------------------------------------------------------------- */
+
+.hud-title {
+  position: absolute;
+  top: var(--hud-gutter);
+  left: var(--hud-gutter);
+  /* Leaves room for the clock panel (warp badge, clock, longest beat label) at top right. */
+  max-width: calc(100vw - 2 * var(--hud-gutter) - 280px);
+  padding: 1px 0 2px 10px;
+  border-left: 1px solid var(--c-graticule);
+  text-shadow: 0 1px 2px var(--c-bg);
+}
+
+.hud-title__main {
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--c-text);
+}
+
+.hud-title__sub {
+  margin-top: 3px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--c-text-dim);
+}
+
+/* ---- top right: warp badge, mission clock, beat label ------------------------------------ */
+
+.hud-clock {
+  position: absolute;
+  top: var(--hud-gutter);
+  right: var(--hud-gutter);
+  min-width: 150px;
+  padding: 7px 12px 8px;
+  text-align: right;
+}
+
+/* The badge sits left of the clock, so its changing width never moves the clock digits. */
+.hud-clock__row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.hud-warp {
+  padding: 0 6px;
+  border: 1px solid var(--c-graticule);
+  border-radius: 2px;
+  font-size: 11px;
+  line-height: 18px;
+  letter-spacing: 0.08em;
+  color: var(--c-text-dim);
+  white-space: nowrap;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.hud-warp.is-realtime {
+  color: var(--c-text);
+  border-color: var(--c-link);
+  background: color-mix(in srgb, var(--c-link) 12%, transparent);
+  letter-spacing: 0.14em;
+}
+
+.hud-warp.is-hidden {
+  display: none;
+}
+
+.hud-clock__time {
+  font-size: 20px;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+
+.hud-clock__beat {
+  margin-top: 3px;
+  min-height: 1.4em;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+/* ---- bottom left: event log -------------------------------------------------------------- */
+
+.hud-log {
+  position: absolute;
+  left: var(--hud-gutter);
+  bottom: var(--hud-gutter);
+  width: min(340px, calc(100vw - 2 * var(--hud-gutter)));
+  padding: 7px 12px 8px;
+  font-size: 12px;
+}
+
+.hud-log.is-empty {
+  display: none;
+}
+
+.hud-log__line {
+  line-height: 1.6;
+  color: var(--c-text-dim);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-log__stamp {
+  color: var(--c-text-dim);
+}
+
+.hud-log__line.is-newest {
+  color: var(--c-text);
+  animation: hud-fade-in 360ms ease-out;
+}
+
+/* When the viewport is too narrow for the log to sit beside the centred transport,
+   lift it above the transport. 1580 = 2 * (gutter + log width + 16 px gap) + transport width. */
+@media (max-width: 1580px) {
+  .hud-log {
+    bottom: calc(var(--hud-gutter) + var(--hud-transport-h) + 12px);
+  }
+}
+
+/* ---- bottom right: readouts --------------------------------------------------------------- */
+
+/* Label and value rows from update({ readouts }). Labels are preformatted by the simulation
+   (for example "KV dV"), so no text-transform here. */
+.hud-readouts {
+  position: absolute;
+  right: var(--hud-gutter);
+  bottom: var(--hud-gutter);
+  width: var(--hud-readouts-w);
+  padding: 7px 12px 8px;
+  font-size: 12px;
+}
+
+.hud-readouts.is-empty {
+  display: none;
+}
+
+.hud-readouts__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.hud-readouts__label {
+  flex: none;
+  color: var(--c-text-dim);
+  letter-spacing: 0.08em;
+}
+
+.hud-readouts__value {
+  min-width: 0;
+  color: var(--c-text);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-readouts__row.is-new {
+  animation: hud-fade-in 360ms ease-out;
+}
+
+/* Lift above the transport when there is no room beside it.
+   1340 = 2 * (gutter + readouts width + 16 px gap) + transport width, rounded up. */
+@media (max-width: 1340px) {
+  .hud-readouts {
+    bottom: calc(var(--hud-gutter) + var(--hud-transport-h) + 12px);
+  }
+}
+
+/* ---- bottom centre: transport ------------------------------------------------------------- */
+
+.hud-transport {
+  position: absolute;
+  left: 50%;
+  bottom: var(--hud-gutter);
+  width: var(--hud-transport-w);
+  height: var(--hud-transport-h);
+  transform: translateX(-50%);
+  padding: 7px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud-scrub {
+  position: relative;
+}
+
+/* Beat-marker lane: one button per beat spanning that beat's slice of the timeline,
+   its left border the marker tick, its label left-aligned after the tick. */
+.hud-scrub__markers {
+  position: relative;
+  height: 18px;
+}
+
+.hud-scrub__marker {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0 4px 0 5px;
+  border: 0;
+  border-left: 1px solid var(--c-text-dim);
+  border-radius: 0;
+  background: transparent;
+  color: var(--c-text-dim);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.hud-scrub__marker-label {
+  display: block;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-scrub__marker:hover {
+  color: var(--c-text);
+  background: color-mix(in srgb, var(--c-text) 6%, transparent);
+}
+
+.hud-scrub__marker.is-current {
+  color: var(--c-text);
+  border-left-color: var(--c-text);
+  background: color-mix(in srgb, var(--c-link) 8%, transparent);
+}
+
+.hud-scrub__marker:focus-visible {
+  outline: 1px solid var(--c-link);
+  outline-offset: -1px;
+}
+
+/* Seek track: the whole 16 px strip is the hit area; the rail is drawn thin in the middle. */
+.hud-scrub__track {
+  position: relative;
+  height: 16px;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.hud-scrub__track.is-dragging {
+  cursor: grabbing;
+}
+
+.hud-scrub__rail,
+.hud-scrub__fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  margin-top: -1.5px;
+  pointer-events: none;
+}
+
+.hud-scrub__rail {
+  background: var(--c-ring);
+}
+
+.hud-scrub__fill {
+  background: color-mix(in srgb, var(--c-link) 55%, transparent);
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+}
+
+/* Continues each marker tick from the lane above down to the rail. */
+.hud-scrub__tick {
+  position: absolute;
+  top: 0;
+  height: 50%;
+  width: 1px;
+  background: var(--c-text-dim);
+  pointer-events: none;
+}
+
+.hud-scrub__head {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--c-text);
+  pointer-events: none;
+}
+
+.hud-scrub__head::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border: 1px solid var(--c-text);
+  border-radius: 50%;
+  background: var(--c-bg);
+}
+
+.hud-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+}
+
+.hud-controls__spacer {
+  flex: 1;
+}
+
+/* ---- buttons ------------------------------------------------------------------------------ */
+
+.hud-btn {
+  appearance: none;
+  margin: 0;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--c-graticule);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--c-text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 24px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+
+.hud-btn:hover {
+  color: var(--c-text);
+  border-color: var(--c-text-dim);
+}
+
+.hud-btn:focus-visible {
+  outline: 1px solid var(--c-link);
+  outline-offset: 1px;
+}
+
+.hud-btn.is-active {
+  color: var(--c-text);
+  border-color: var(--c-link);
+  background: color-mix(in srgb, var(--c-link) 12%, transparent);
+}
+
+/* Play/pause: one toggling button showing the action it will take.
+   Triangle while paused, two bars while playing. Drawn in CSS, no glyph font needed. */
+.hud-play {
+  width: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--c-text);
+  border-color: var(--c-text-dim);
+}
+
+.hud-icon {
+  display: block;
+  width: 9px;
+  height: 11px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.hud-play.is-playing .hud-icon {
+  clip-path: none;
+  background: linear-gradient(to right, currentColor 0 34%, transparent 34% 66%, currentColor 66% 100%);
+}
+
+.hud-speeds {
+  display: flex;
+}
+
+.hud-speeds .hud-btn + .hud-btn {
+  margin-left: -1px;
+}
+
+.hud-speed {
+  min-width: 40px;
+  padding: 0 7px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.hud-speed.is-active {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- centre: summary card (resolution beat only) ------------------------------------------ */
+
+.hud-summary {
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: min(400px, calc(100vw - 2 * var(--hud-gutter)));
+  padding: 14px 18px 16px;
+  background: color-mix(in srgb, var(--c-bg) 72%, transparent);
+  transform: translate(-50%, calc(-50% + 6px));
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 350ms ease, transform 350ms ease, visibility 0s linear 350ms;
+}
+
+.hud-summary.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%);
+  transition: opacity 500ms ease, transform 500ms ease, visibility 0s;
+}
+
+.hud-summary__list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+
+.hud-summary__row {
+  display: grid;
+  grid-template-columns: 3ch 1fr auto;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--c-graticule);
+  font-size: 12px;
+}
+
+.hud-summary__row:last-child {
+  border-bottom: 0;
+}
+
+.hud-summary.is-visible .hud-summary__row {
+  animation: hud-fade-in 360ms ease-out both;
+  animation-delay: calc(var(--i, 0) * 60ms + 120ms);
+}
+
+.hud-summary__num,
+.hud-summary__time {
+  color: var(--c-text-dim);
+}
+
+.hud-summary__label {
+  color: var(--c-text);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hud-replay {
+  display: block;
+  width: 100%;
+  height: 30px;
+  line-height: 28px;
+  color: var(--c-text);
+  border-color: var(--c-text-dim);
+  letter-spacing: 0.24em;
+}
+
+@keyframes hud-fade-in {
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- phones (portrait and narrow windows) -------------------------------------------------
+ *
+ * The desktop corners do not fit side by side, so the panels stack: title and clock across the
+ * top, the event log (last three lines) under them, the readouts as a two-column strip above
+ * the transport, the transport full width at the bottom.
+ */
+@media (max-width: 640px) {
+  .hud-root {
+    --hud-gutter: 16px;
+    --hud-top: 12px;
+    --hud-clock-w: 150px;
+    --hud-transport-h: 76px;
+    font-size: 11px;
+  }
+
+  .hud-title {
+    top: var(--hud-top);
+    max-width: calc(100vw - 2 * var(--hud-gutter) - var(--hud-clock-w) - 10px);
+    padding-left: 8px;
+  }
+
+  .hud-title__main {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+  }
+
+  .hud-title__sub {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+
+  .hud-clock {
+    top: var(--hud-top);
+    width: var(--hud-clock-w);
+    min-width: 0;
+    padding: 5px 8px 6px;
+  }
+
+  .hud-clock__row {
+    gap: 6px;
+  }
+
+  .hud-warp {
+    padding: 0 4px;
+    font-size: 10px;
+    line-height: 16px;
+  }
+
+  .hud-clock__time {
+    font-size: 16px;
+  }
+
+  .hud-clock__beat {
+    margin-top: 2px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hud-log {
+    top: calc(var(--hud-top) + 72px);
+    bottom: auto;
+    width: calc(100vw - 2 * var(--hud-gutter));
+    padding: 4px 8px 5px;
+    font-size: 10px;
+  }
+
+  .hud-log__line {
+    line-height: 1.5;
+  }
+
+  .hud-log__line:nth-last-child(n + 4) {
+    display: none;
+  }
+
+  .hud-readouts {
+    left: var(--hud-gutter);
+    right: var(--hud-gutter);
+    bottom: calc(var(--hud-gutter) + var(--hud-transport-h) + 8px);
+    width: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 16px;
+    padding: 4px 10px 5px;
+    font-size: 11px;
+  }
+
+  .hud-readouts.is-empty {
+    display: none;
+  }
+
+  .hud-readouts__row {
+    min-width: 0;
+    line-height: 1.5;
+  }
+
+  .hud-transport {
+    padding: 5px 10px 6px;
+    gap: 4px;
+  }
+
+  .hud-scrub__marker {
+    padding: 0 2px 0 3px;
+    font-size: 9px;
+    letter-spacing: 0.02em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-root *,
+  .hud-root *::before,
+  .hud-root *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---- 3D labels ----------------------------------------------------------------------------
+ *
+ * Elements created by src/scene/labels.js as CSS2DObjects with class "viz-label".
+ * CSS2DRenderer places each element with translate(-cx%, -cy%) translate(x px, y px), where
+ * the percentages are of the element's own box. The box here is zero-sized, so its top-left
+ * corner lands exactly on the projected anchor whatever CSS2DObject.center is set to. The
+ * text then overflows upward (column flex, justify-content: flex-end) and the margin moves it
+ * 7 px right and 5 px up; the ::before dot is offset back onto the anchor itself.
+ *
+ * Per-actor colour: add one modifier class next to viz-label. Modifier to palette variable:
+ *   viz-label--threat           --c-threat
+ *   viz-label--sensor           --c-sensor
+ *   viz-label--relay            --c-relay
+ *   viz-label--interceptor-sat  --c-interceptor-sat
+ *   viz-label--interceptor      --c-interceptor
+ *   viz-label--link             --c-link
+ * Suggested assignment by label text (section 5.3): SENSOR SAT and TRACK -> sensor;
+ * RELAY -> relay; INTERCEPTOR SAT and TARGET ASSIGNED -> interceptor-sat; THREAT -> threat;
+ * INTERCEPTOR -> interceptor; MOBILE LAUNCHER and INTERCEPT -> no modifier (--c-text).
+ */
+
+.viz-label {
+  position: absolute;
+  width: 0;
+  height: 0;
+  margin: -5px 0 0 7px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  overflow: visible;
+  color: var(--c-text);
+  font-family: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+  font-size: 11px;
+  line-height: 1.2;
+  font-variant-caps: small-caps;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px var(--c-bg);
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-label::before {
+  content: "";
+  position: absolute;
+  left: -9px; /* -(7 px margin) - (2 px radius) */
+  top: 3px; /* (5 px margin) - (2 px radius) */
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* TRACK shares its anchor with THREAT and TARGET ASSIGNED with INTERCEPTOR SAT, so those
+   two hang below and to the right of the point instead of above it. */
+.viz-label[data-label-id="track"],
+.viz-label[data-label-id="assigned"] {
+  justify-content: flex-start;
+  margin: 5px 0 0 7px;
+}
+
+.viz-label[data-label-id="track"]::before,
+.viz-label[data-label-id="assigned"]::before {
+  top: -7px; /* -(5 px margin) - (2 px radius) */
+}
+
+/* INTERCEPT POINT sits on the course view's ring marker, which is often near the right edge
+   of a portrait screen: it hangs above and to the left of the point, without the dot. */
+.viz-label[data-label-id="predicted"] {
+  align-items: flex-end;
+  margin: -10px 0 0 -12px;
+}
+
+.viz-label[data-label-id="predicted"]::before {
+  display: none;
+}
+
+.viz-label--threat {
+  color: var(--c-threat);
+}
+
+.viz-label--sensor {
+  color: var(--c-sensor);
+}
+
+.viz-label--relay {
+  color: var(--c-relay);
+}
+
+.viz-label--interceptor-sat {
+  color: var(--c-interceptor-sat);
+}
+
+.viz-label--interceptor {
+  color: var(--c-interceptor);
+}
+
+.viz-label--link {
+  color: var(--c-link);
+}

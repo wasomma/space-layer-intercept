@@ -1,0 +1,48 @@
+<title>Space-Layer Intercept</title>
+<style>
+  /* One deliberate dark ops-centre look, same in either viewer theme. */
+  :root {
+    color-scheme: dark;
+    --bg: #05080f;
+  }
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  #gl {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+  }
+  #labels {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  #hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="assets/app.css" />
+<canvas id="gl"></canvas>
+<div id="labels"></div>
+<div id="hud"></div>
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+    }
+  }
+</script>
+<script type="module" src="assets/app.js"></script>

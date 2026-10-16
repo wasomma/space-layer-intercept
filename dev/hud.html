@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HUD harness</title>
+    <!--
+      Dev harness for src/hud. Dev server only:
+      http://127.0.0.1:5173/dev/hud.html
+      Query parameters: ?t=<animation seconds> ?paused=1 ?speed=<0.5|1|2> ?freecam=1 ?labels=0
+      ?bare=1 (update() without simT, warp, readouts) ?bare=2 (also beats and events without
+      simulation anchors). See dev/hud.js.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #05080f;
+      }
+
+      /* Stand-in for the 3D scene so panel translucency and label legibility can be judged:
+         a faint grid, a globe-sized disc with a rim. The palette variables are set on :root
+         by createHud(). */
+      #backdrop {
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(circle at 50% 50%, var(--c-globe) 0 30vmin, var(--c-atmos) 30.2vmin, transparent 31vmin),
+          repeating-linear-gradient(0deg, var(--c-graticule) 0 1px, transparent 1px 48px),
+          repeating-linear-gradient(90deg, var(--c-graticule) 0 1px, transparent 1px 48px),
+          var(--c-bg);
+      }
+
+      #labels {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      /* Harness only: a crosshair on each sample label's anchor point, so the .viz-label dot
+         can be checked to sit on the anchor with the text up and to the right. */
+      .harness-anchor {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        margin: -7px 0 0 -7px;
+        background:
+          linear-gradient(var(--c-sat-dim), var(--c-sat-dim)) 7px 0 / 1px 15px no-repeat,
+          linear-gradient(var(--c-sat-dim), var(--c-sat-dim)) 0 7px / 15px 1px no-repeat;
+        opacity: 0.6;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="backdrop"></div>
+    <div id="labels"></div>
+    <div id="hud"></div>
+    <script type="module" src="./hud.js"></script>
+  </body>
+</html>

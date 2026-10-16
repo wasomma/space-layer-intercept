@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Space-Layer Intercept: Physics-Driven Concept</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #05080f;
+      }
+      #gl {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #labels {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <div id="labels"></div>
+    <div id="hud"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

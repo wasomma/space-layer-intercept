@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scene Harness</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--c-bg, #05080f);
+      }
+      #gl {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      #labels {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      /*
+       * Harness-only stand-in for the .viz-label rules in src/hud/hud.css (kept separate so the
+       * harness does not depend on the HUD module). Colours come from the palette's CSS
+       * variables, which scene.js applies to :root.
+       */
+      .viz-label {
+        position: absolute;
+        width: 0;
+        height: 0;
+        margin: -5px 0 0 7px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        font: 600 10px/1.2 "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--c-text);
+        white-space: nowrap;
+        text-shadow: 0 0 4px var(--c-bg), 0 0 2px var(--c-bg);
+      }
+      .viz-label::before {
+        content: "";
+        position: absolute;
+        left: -9px;
+        top: 3px;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+      .viz-label[data-label-id="track"],
+      .viz-label[data-label-id="assigned"] {
+        justify-content: flex-start;
+        margin: 5px 0 0 7px;
+      }
+      .viz-label[data-label-id="track"]::before,
+      .viz-label[data-label-id="assigned"]::before {
+        top: -7px;
+      }
+      .viz-label--threat { color: var(--c-threat); }
+      .viz-label--sensor { color: var(--c-sensor); }
+      .viz-label--relay { color: var(--c-relay); }
+      .viz-label--interceptor-sat { color: var(--c-interceptor-sat); }
+      .viz-label--interceptor { color: var(--c-interceptor); }
+      .viz-label--link { color: var(--c-link); }
+      #harness {
+        position: fixed;
+        top: 10px;
+        left: 12px;
+        font: 11px/1.5 Consolas, "Cascadia Mono", monospace;
+        color: var(--c-text-dim);
+        pointer-events: auto;
+        user-select: none;
+      }
+      #harness a {
+        color: var(--c-text-dim);
+        text-decoration: none;
+        margin-right: 8px;
+      }
+      #harness a.on {
+        color: var(--c-text);
+        text-decoration: underline;
+      }
+      #harness .title {
+        color: var(--c-text);
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <div id="labels"></div>
+    <div id="hud">
+      <div id="harness"></div>
+    </div>
+    <script type="module" src="./scene.js"></script>
+  </body>
+</html>
