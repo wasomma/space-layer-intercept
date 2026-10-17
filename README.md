@@ -80,7 +80,7 @@ real.
 | Kill-vehicle burn | 2 s at 12.9 g, plus a 0.43 m/s trim at burnout |
 | Kill-vehicle delta-v | 0.25 km/s |
 | Closing speed | 2.39 km/s |
-| Beat warps | 5.6, 1, 2, 4.2, 43.3, 1, 149.3 |
+| Beat warps | 5.6, 1, 2, 4.2, 36.8, 1, 128 |
 
 `npm run check` prints the same summary from a fresh build of the scenario.
 
@@ -142,6 +142,7 @@ npm run check
 - RK4 against Kepler.
 - Line-of-sight and cone geometry.
 - Frame round trips.
+- The live-link export (positions, velocities, attitude, footprint, events) and the live clock.
 
 `npm run check` builds the scenario under Node and asserts:
 
@@ -186,7 +187,57 @@ For scripting or verification from the browser console, `window.__viz` exposes:
 - playback: `seek(t)`, `play()`, `pause()`, `setSpeed(s)`, `freeCam(bool)`, `jumpBeat(id)`;
 - time: `t()`, `simT()`;
 - state: `states()`, `origin()`, `scenario`, `timeline`;
-- `step(dt, n)`, which runs frames synchronously when the page is not animating.
+- `step(dt, n)`, which runs frames synchronously when the page is not animating;
+- `live()`, the live link's URL, connection, status, simulation time and site check (null
+  without `?live`).
+
+## Live link
+
+Live mode lets an external simulation drive the time. Open the page with `?live` and it connects
+to a WebSocket server, waits on the opening beat in standby, and once a launch arrives follows the
+server's clock instead of playing the 90-second film. The host can pause the clock, run it faster
+than real time, or reset to standby; the page shows the host's simulation time, the host's rate in
+the warp badge and a status badge (STANDBY, COUNTDOWN, LIVE, PAUSED, HOST CLOCK LOST, LINK LOST,
+SITE MISMATCH). The playback controls are hidden; C still toggles the free camera.
+
+| URL | Connects to |
+|---|---|
+| `?live` | `ws://<this host>/live` (`wss:` on https), for a server that also serves this page |
+| `?live=ws://host:port/path` | that URL; only `ws:` and `wss:` URLs are accepted |
+
+Without `?live` nothing changes: no connection is opened and the film plays as before.
+
+**Messages to the page** (JSON, one per WebSocket message; times in seconds; protocol 1):
+
+| Message | Meaning |
+|---|---|
+| `{"type":"clock","hostTime":s,"rate":r,"paused":b}` | The host's simulation clock, about 10 times a second; `rate` is host seconds per wall second |
+| `{"type":"launch","ignitionHostTime":s,"site":{"lat","lon","altM"},"azimuthDeg":a}` | Ignition (T+0) is at host time `ignitionHostTime`; a later time gives a countdown |
+| `{"type":"reset"}` | Back to standby |
+
+Between clock messages the page advances at the last rate, for at most 5 s, then reports HOST
+CLOCK LOST. The page always renders its own scenario (`DEFAULT_PARAMS`); a launch whose site or
+azimuth differs from it is flagged SITE MISMATCH. On connecting, the page sends
+`{"type":"hello","role":"viewer","protocol":1}`; it ignores any message it does not know.
+
+**Data for the host.** `src/sim/live.js` (also exported from `src/sim/index.js`) gives a host
+what it needs to show the engagement on its own terrain, under Node or in the browser:
+
+- `exportLiveState(scenario, t, { siteAltM })`: the state at simulation time `t`, with no
+  choreography. Latitude and longitude are in degrees on this model's sphere; altitude is metres
+  above the sphere plus `siteAltM` (the launcher's ground altitude on the host's terrain);
+  velocity is metres per second east, north and up relative to the rotating Earth; heading and
+  pitch follow the body axis for the missile and the kill vehicle and the velocity for the
+  satellites. It also gives the phase, status flags, the sensor footprint on the ground as a ring
+  of 36 latitude/longitude points, and the intercept point once it has happened.
+- `eventsBetween(scenario, t0, t1)`: the events in `(t0, t1]`, each with a stable `id` (`IGNITION`,
+  `DETECT`, `TRACK`, `HANDOFF_RELAY`, `HANDOFF_INTERCEPTOR`, `ASSIGN`, `BURNOUT`, `RELEASE`,
+  `INTERCEPT`, `COMPLETE`, and the pre-launch ones).
+- `liveScenarioSummary(scenario)`: the protocol version, the site, the azimuth and the key times.
+
+Known limit: the effects that pace themselves in animation time (pulses, fades, label windows)
+stretch in live mode during the beats that the film plays fastest, because the page shows those
+beats at the host's rate.
 
 ## Module map
 
@@ -206,6 +257,8 @@ For scripting or verification from the browser console, `window.__viz` exposes:
 | `src/sim/states.js` | `computeStates(animT)`: every actor's state, trails, beams, labels, effects and readouts for one frame |
 | `src/sim/camera.js` | The scripted camera, one shot per beat with a hard cut at each beat start |
 | `src/sim/clock.js`, `index.js` | The master clock; the `createSimulation` entry point |
+| `src/sim/live.js` | The live-link export: geodetic state, events and scenario summary for an external host |
+| `src/live/clock.js`, `link.js` | Live mode: following a host's clock from its messages; the WebSocket connection and `?live` parsing |
 | `src/scene/index.js` | The three.js scene, multisampled bloom composer and CSS2D label renderer; fans states out to the actors with the floating origin |
 | `src/scene/earth.js`, `starfield.js`, `constellation.js` | The rotating globe with land outlines, graticule and atmosphere rim; stars; both shells as fixed-pixel markers with small bodies and camera-relative orbit rings |
 | `src/scene/terrain.js`, `launcher.js` | The woodland tile at the launch site; the eight-axle launcher with erecting canister |

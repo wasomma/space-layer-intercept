@@ -11,6 +11,7 @@ import { createStateComputer } from './states.js';
 import { createCamera } from './camera.js';
 
 export { buildScenario, DEFAULT_PARAMS, buildTimeline, TOTAL_DURATION, KEY_TIMES, createClock, createStateComputer, createCamera };
+export { exportLiveState, eventsBetween, liveScenarioSummary, LIVE_PROTOCOL } from './live.js';
 export * from './kepler.js';
 export * from './lambert.js';
 export * from './integrate.js';

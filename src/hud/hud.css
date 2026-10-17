@@ -136,6 +136,53 @@
   white-space: nowrap;
 }
 
+/* ---- live mode: an external host drives the time ------------------------------------------- */
+
+.hud-live {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 0 6px;
+  border: 1px solid var(--c-graticule);
+  border-radius: 2px;
+  font-size: 11px;
+  line-height: 18px;
+  letter-spacing: 0.14em;
+  color: var(--c-text-dim);
+  white-space: nowrap;
+}
+
+.hud-live:empty {
+  display: none;
+}
+
+.hud-live[data-level='ok'] {
+  color: var(--c-text);
+  border-color: var(--c-interceptor-sat);
+  background: color-mix(in srgb, var(--c-interceptor-sat) 12%, transparent);
+}
+
+.hud-live[data-level='warn'] {
+  color: var(--c-text);
+  border-color: var(--c-threat);
+  background: color-mix(in srgb, var(--c-threat) 14%, transparent);
+}
+
+.hud-root.is-live {
+  --hud-transport-h: 0px;
+}
+
+.hud-root.is-live .hud-transport,
+.hud-root.is-live .hud-replay {
+  display: none;
+}
+
+/* Phones: the badge makes the clock panel taller, so the event log under it moves down. */
+@media (max-width: 640px) {
+  .hud-root.is-live .hud-log {
+    top: calc(var(--hud-top) + 82px);
+  }
+}
+
 /* ---- bottom left: event log -------------------------------------------------------------- */
 
 .hud-log {

@@ -1,7 +1,7 @@
 // HUD overlay and transport.
 //
-//   createHud({ root, beats, duration, events })
-//     -> { update({ t, simT, warp, beatId, playing, speed, freeCam, readouts }), on(name, callback), destroy() }
+//   createHud({ root, beats, duration, events, live })
+//     -> { update({ t, simT, warp, beatId, playing, speed, freeCam, readouts, live }), on(name, callback), destroy() }
 //
 //   beats:  [{ id, label, start, end, simStart, simEnd, warp }]  animation boundaries (s) and
 //           simulation anchors (s from ignition); simStart is shown on the summary card.
@@ -24,6 +24,11 @@
 // derived from the beats' simStart and warp passed at creation, and shown as T+--:-- when those
 // are missing too. Without warp the current beat's warp is used; a badge with no positive warp
 // is hidden. A missing or malformed readouts array empties the panel, which hides when empty.
+//
+// Live mode (createHud({ ..., live: true })): the transport and the REPLAY button are hidden,
+// since an external host drives the time, and a status badge sits under the beat label.
+// update({ live: { text, level } }) sets it; level is 'ok', 'wait' or 'warn'. simT: null shows
+// T+--:-- (no launch yet) instead of falling back to the beats.
 
 import { cssVars } from '../shared/palette.js';
 import './hud.css';
@@ -143,7 +148,7 @@ function releaseFocus(event) {
   }
 }
 
-export function createHud({ root, beats = [], duration, events = [] } = {}) {
+export function createHud({ root, beats = [], duration, events = [], live = false } = {}) {
   if (!root) throw new Error('createHud: a root element is required');
 
   // Palette as CSS custom properties on :root, so var(--c-*) resolves for the HUD and for
@@ -241,6 +246,7 @@ export function createHud({ root, beats = [], duration, events = [] } = {}) {
     freeCam: undefined,
     eventCount: -1,
     summary: undefined,
+    live: null,
   };
   // Rendered readout rows in display order: { id, label, value, node, labelNode, valueNode }.
   const readoutRows = [];
@@ -248,6 +254,7 @@ export function createHud({ root, beats = [], duration, events = [] } = {}) {
   // ---- DOM ---------------------------------------------------------------------------------
 
   root.classList.add('hud-root');
+  root.classList.toggle('is-live', Boolean(live));
 
   // Top left: title block.
   const title = el('div', 'hud-title');
@@ -261,6 +268,9 @@ export function createHud({ root, beats = [], duration, events = [] } = {}) {
   clockRow.append(warpBadge, clockTime);
   const clockBeat = el('div', 'hud-clock__beat');
   clockPanel.append(clockRow, clockBeat);
+  // Live mode only: the link status under the beat label.
+  const liveBadge = el('div', 'hud-live');
+  if (live) clockPanel.append(liveBadge);
 
   // Bottom left: event log.
   const logPanel = el('div', 'hud-log hud-panel');
@@ -546,7 +556,7 @@ export function createHud({ root, beats = [], duration, events = [] } = {}) {
       renderBeat(beatId);
     }
 
-    const simT = Number.isFinite(s.simT) ? s.simT : simFromBeats(t);
+    const simT = s.simT === null ? NaN : Number.isFinite(s.simT) ? s.simT : simFromBeats(t);
     const clockText = formatSimTime(simT);
     if (clockText !== view.clock) {
       view.clock = clockText;
@@ -610,6 +620,17 @@ export function createHud({ root, beats = [], duration, events = [] } = {}) {
       summary.classList.toggle('is-visible', showSummary);
       summary.setAttribute('aria-hidden', String(!showSummary));
       summary.inert = !showSummary;
+    }
+
+    if (live && s.live && typeof s.live === 'object') {
+      const text = String(s.live.text ?? '');
+      const level = ['ok', 'wait', 'warn'].includes(s.live.level) ? s.live.level : 'wait';
+      const key = `${level}|${text}`;
+      if (key !== view.live) {
+        view.live = key;
+        liveBadge.textContent = text;
+        liveBadge.dataset.level = level;
+      }
     }
   }
 
