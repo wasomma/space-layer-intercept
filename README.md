@@ -233,7 +233,26 @@ what it needs to show the engagement on its own terrain, under Node or in the br
 - `eventsBetween(scenario, t0, t1)`: the events in `(t0, t1]`, each with a stable `id` (`IGNITION`,
   `DETECT`, `TRACK`, `HANDOFF_RELAY`, `HANDOFF_INTERCEPTOR`, `ASSIGN`, `BURNOUT`, `RELEASE`,
   `INTERCEPT`, `COMPLETE`, and the pre-launch ones).
-- `liveScenarioSummary(scenario)`: the protocol version, the site, the azimuth and the key times.
+- `liveScenarioSummary(scenario)`: the protocol version, the site, the azimuth and the key times,
+  among them `orient` (the interceptor satellite's slew starts; it ends at `release`), `kvBurnout`
+  (the kill vehicle's kick burn ends) and `interceptFxEnd` (the intercept effects end).
+
+**The space segment.** `exportLiveState` also gives what a host needs to draw the space segment
+the way this page does, in simulation time:
+
+| Field | Shape | Meaning |
+|---|---|---|
+| `satellites.interceptor.pointing` | `{ headingDeg, pitchDeg }` | The launch tube's axis, which the slew turns: nadir until `orient` (its heading is then the firing direction's, so it holds steady and runs on into the slew), on the firing direction from `release` on. The satellite's own `headingDeg` and `pitchDeg` stay those of its velocity |
+| `satellites.interceptor.thrusters` | `{ level, dirEnu }` | Reaction-control firing: `level` 1 while the thrusters spin the slew up (its first 20 %) and while they brake it (its last 20 %), `dirEnu` the unit vector (east, north, up) along which they push the axis, toward the firing direction and then against the turn; `level` 0 and `dirEnu` null otherwise. The page draws the couple as puffs exhausting against `dirEnu` at the nose and along it at the tail |
+| `killVehicle.plume` | number, 0..1 | 1 through the 2 s kick burn after release, 0 after |
+| `interceptFx` | `{ flash, ring, burst }` or null | The intercept effects at the `intercept` point with the numbers the page draws (`src/sim/effects.js`): null before the intercept and from 3 s after it, and each effect null after its own envelope |
+| `interceptFx.flash` | `{ level, diameterKm }` | Opacity and width of the flash: it rises to full over 0.3 s, 0.75 km across, and is gone at 1.5 s |
+| `interceptFx.ring` | `{ level, diameterKm }` | Opacity and width of the shock ring: it expands to 3.75 km across and fades out by 1.5 s; its bright crest is at 90 % of the radius |
+| `interceptFx.burst` | `{ level, count, spreadKm, pieceSizeKm }` | The 300 debris pieces over 3 s: `spreadKm` is how far the fastest have travelled from the intercept point (5 km from 1.875 s on; the slowest go 35 % as far), `level` their mean brightness as each fades out over its own life, `pieceSizeKm` the size of one piece |
+
+The film plays the Intercept beat in real time, so the effect envelopes are the same in
+simulation seconds. Two touches that the film paces in animation time are left out: the plume's
+short fade after the burn and the pulsing of the thruster puffs.
 
 Known limit: the effects that pace themselves in animation time (pulses, fades, label windows)
 stretch in live mode during the beats that the film plays fastest, because the page shows those
@@ -247,7 +266,7 @@ beats at the host's rate.
 | `src/main.js` | Wiring: renderer with a logarithmic depth buffer, simulation, master clock, scene, floating origin, scripted camera with anchor-relative smoothing and shake, free-orbit toggle, HUD callbacks, resize, `window.__viz` |
 | `src/shared/constants.js` | Earth radius, gravitational parameter, rotation rate, degree and g0 constants |
 | `src/shared/geo.js` | Lat/lon to vectors, ECI/ECEF rotation, site velocity, local east-north-up frames, great-circle helpers |
-| `src/shared/easing.js`, `palette.js` | Scalar easing helpers; the colour palette as constants and CSS custom properties |
+| `src/shared/easing.js`, `palette.js`, `random.js` | Scalar easing helpers; the colour palette as constants and CSS custom properties; the seeded PRNG |
 | `src/sim/kepler.js` | Universal-variable Kepler propagation, circular orbit states, period, apsides |
 | `src/sim/lambert.js` | Universal-variable Lambert solver |
 | `src/sim/integrate.js` | RK4 step and two-body gravity |
@@ -256,6 +275,7 @@ beats at the host's rate.
 | `src/sim/timeline.js` | The seven beats, per-beat warp, the animation-simulation time mapping, `KEY_TIMES` |
 | `src/sim/states.js` | `computeStates(animT)`: every actor's state, trails, beams, labels, effects and readouts for one frame |
 | `src/sim/camera.js` | The scripted camera, one shot per beat with a hard cut at each beat start |
+| `src/sim/effects.js` | The intercept effects: their envelopes, the levels and sizes drawn, the burst's pieces (shared by the scene and the live link) |
 | `src/sim/clock.js`, `index.js` | The master clock; the `createSimulation` entry point |
 | `src/sim/live.js` | The live-link export: geodetic state, events and scenario summary for an external host |
 | `src/live/clock.js`, `link.js` | Live mode: following a host's clock from its messages; the WebSocket connection and `?live` parsing |

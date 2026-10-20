@@ -10,7 +10,7 @@
 //     sized in CSS pixels by index.js every frame through applyPixelSizes)
 //   - a fat-line trail that writes origin-relative positions in place
 //   - the marker cross-fade of the 4.2 marker policy
-//   - small guards (isVec3, num, orientZ) and a seeded PRNG
+//   - small guards (isVec3, num, orientZ) and a seeded PRNG (from shared/random.js)
 
 import * as THREE from 'three';
 import { Line2 } from 'three/addons/lines/Line2.js';
@@ -388,14 +388,5 @@ export function orientZ(obj, dir) {
 }
 const _dir = new THREE.Vector3();
 
-/** Small seeded PRNG (mulberry32), returns floats in [0, 1). */
-export function rng(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+/** Small seeded PRNG (mulberry32), returns floats in [0, 1); it lives in shared/random.js. */
+export { rng } from '../shared/random.js';

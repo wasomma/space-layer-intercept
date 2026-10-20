@@ -9,14 +9,17 @@
 // world Y above (with a fallback when the view direction is parallel to it). Every offset is a
 // framing choice (starting values of 5.7, to be tuned by eye in Phase 2).
 //
-// Also exports interceptFxAt, the intercept effect envelopes shared with states.js (the shake
-// of the Intercept shot comes from it).
+// The shake of the Intercept shot comes from the intercept effect envelopes (interceptFxAt,
+// effects.js), which are re-exported here for existing importers.
 
 import { Vector3 } from 'three';
 import { R_EARTH, DEG } from '../shared/constants.js';
 import { localFrameEci, siteVelocityEci } from '../shared/geo.js';
-import { clamp, smoothstep, easeOutQuad } from '../shared/easing.js';
+import { clamp, smoothstep } from '../shared/easing.js';
 import { slerpUnit } from './scenario.js';
+import { interceptFxAt } from './effects.js';
+
+export { interceptFxAt };
 
 export const FOV_DEFAULT = 50;
 export const FOV_LAUNCH = 55;
@@ -44,32 +47,6 @@ const ACQ_PULL_SECONDS = 2.5; // then pull back over this long, settling before 
 const ACQ_DISTANCE_KM = 17000; // wide acquisition view: distance across the sensor beam
 const ACQ_AIM = 0.42; // aim point from the missile (0) to the sensor (1), clear of the HUD
 const ACQ_DRIFT_FROM = 5.5; // boost shot: the wide view starts drifting into the Handoff framing (beat seconds)
-
-// Intercept effect envelopes, animation seconds after the intercept (v1 pacing).
-const FX_WINDOW = 3;
-const FLASH_RISE = 0.3;
-const FLASH_END = 1.5;
-const RING_DURATION = 1.5;
-const BURST_DURATION = 3;
-const SHAKE_DURATION = 1;
-
-/**
- * Intercept effects at animation time animT for an intercept at animation time animI:
- * progress values, all 0 outside [animI, animI + 3).
- * @returns {{ active: boolean, flash: number, ring: number, burst: number, shake: number }}
- */
-export function interceptFxAt(animT, animI) {
-  const local = animT - animI;
-  if (!(local >= 0 && local < FX_WINDOW)) return { active: false, flash: 0, ring: 0, burst: 0, shake: 0 };
-  const flash = local < FLASH_RISE ? smoothstep(local, 0, FLASH_RISE) : 1 - smoothstep(local, FLASH_RISE, FLASH_END);
-  return {
-    active: true,
-    flash,
-    ring: clamp(local / RING_DURATION),
-    burst: clamp(local / BURST_DURATION),
-    shake: local < SHAKE_DURATION ? easeOutQuad(1 - local / SHAKE_DURATION) : 0,
-  };
-}
 
 const WORLD_Y = new Vector3(0, 1, 0);
 const WORLD_Z = new Vector3(0, 0, 1);
