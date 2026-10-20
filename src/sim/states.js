@@ -10,7 +10,8 @@ import { R_EARTH, OMEGA_EARTH, G0, DEG } from '../shared/constants.js';
 import { earthRotationAngle, ecefToEci, eciToEcef, localFrameEci, siteVelocityEci, greatCircleDistance } from '../shared/geo.js';
 import { clamp, lerp, smoothstep, easeInOutCubic } from '../shared/easing.js';
 import { LINK, SENSOR } from '../shared/palette.js';
-import { createCamera, interceptFxAt, COURSE_DELAY } from './camera.js';
+import { createCamera, COURSE_DELAY } from './camera.js';
+import { interceptFxAt } from './effects.js';
 import { period } from './kepler.js';
 
 // ---------------------------------------------------------------------------

@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { R_EARTH, DEG } from '../src/shared/constants.js';
 import { smoothstep } from '../src/shared/easing.js';
 import { latLonToEcef, ecefToEci, eciToEcef, earthRotationAngle, localFrame } from '../src/shared/geo.js';
+import { Vector3 } from 'three';
 import { buildScenario, DEFAULT_PARAMS } from '../src/sim/scenario.js';
+import { buildTimeline } from '../src/sim/timeline.js';
+import { createStateComputer } from '../src/sim/states.js';
+import { interceptFxShape } from '../src/sim/effects.js';
 import { exportLiveState, eventsBetween, liveScenarioSummary } from '../src/sim/live.js';
 
 const scenario = buildScenario();
@@ -14,6 +18,32 @@ const SITE_ALT_M = 1800;
 function ecefOf(a, siteAltM = SITE_ALT_M) {
   return latLonToEcef(a.lat, a.lon, (a.altM - siteAltM) / 1000);
 }
+
+/** ECI unit vector of heading and pitch (degrees) at the geodetic actor a, time t. */
+function eciAxis(headingDeg, pitchDeg, a, t) {
+  const { east, north, up } = localFrame(a.lat, a.lon);
+  const h = headingDeg * DEG;
+  const p = pitchDeg * DEG;
+  const d = new Vector3()
+    .addScaledVector(east, Math.cos(p) * Math.sin(h))
+    .addScaledVector(north, Math.cos(p) * Math.cos(h))
+    .addScaledVector(up, Math.sin(p));
+  return ecefToEci(d, earthRotationAngle(t));
+}
+
+/** East, north and up components of the ECI vector v at the geodetic actor a, time t. */
+function enuOf(v, a, t) {
+  const { east, north, up } = localFrame(a.lat, a.lon);
+  const d = eciToEcef(v, earthRotationAngle(t));
+  return [d.dot(east), d.dot(north), d.dot(up)];
+}
+
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+// The visualization's own states, for checking that the export carries the numbers it draws.
+const timeline = buildTimeline(scenario);
+const computeStates = createStateComputer(scenario, timeline);
+const filmAt = (t) => computeStates(timeline.simToAnim(t));
 
 test('the missile starts on the site at the host ground altitude, at rest on the Earth', () => {
   const s = exportLiveState(scenario, 0, { siteAltM: SITE_ALT_M });
@@ -151,4 +181,180 @@ test('the scenario summary gives the site, the azimuth and ordered key times', (
   assert.equal(s.azimuthDeg, DEFAULT_PARAMS.launchAzimuthDeg);
   const k = s.keyTimes;
   assert.ok(k.detect < k.track && k.track < k.assign && k.assign < k.release && k.release < k.intercept && k.intercept < k.impact);
+});
+
+// ---------------------------------------------------------------------------
+// Space segment: the interceptor satellite's slew and thrusters, the kill vehicle's plume and
+// the intercept effects.
+
+const E = scenario.engagement;
+const tOrient = E.tOrient;
+const slewSpan = tRelease - tOrient;
+const accelShare = DEFAULT_PARAMS.engagement.slewAccelFraction;
+const tSpunUp = tOrient + accelShare * slewSpan; // thrusters stop spinning the slew up
+const tBrake = tRelease - accelShare * slewSpan; // and start braking it
+const tKvBurnEnd = tRelease + E.kv.burnDuration;
+
+test('the scenario summary adds the slew start, the kill vehicle burnout and the end of the intercept effects', () => {
+  const k = liveScenarioSummary(scenario).keyTimes;
+  assert.equal(k.orient, tOrient);
+  assert.equal(k.kvBurnout, E.tKvBurnout);
+  assert.equal(k.interceptFxEnd, tIntercept + 3);
+  assert.ok(k.orient < k.release && k.release < k.kvBurnout && k.kvBurnout < k.intercept && k.intercept < k.interceptFxEnd);
+});
+
+test('the interceptor satellite pointing axis is the slew axis, separate from its velocity heading', () => {
+  for (const t of [tOrient - 30, tOrient, tOrient + 20, (tSpunUp + tBrake) / 2, tRelease - 10, tRelease, tRelease + 200]) {
+    const sat = exportLiveState(scenario, t).satellites.interceptor;
+    const axis = eciAxis(sat.pointing.headingDeg, sat.pointing.pitchDeg, sat, t);
+    const err = axis.distanceTo(E.facingAt(t));
+    assert.ok(err < 1e-9, `pointing at ${t} is ${err} off the slew axis`);
+    // headingDeg and pitchDeg stay those of the velocity.
+    const [ve, vn, vu] = sat.velEnuMs;
+    const velHeading = ((Math.atan2(ve, vn) / DEG) % 360 + 360) % 360;
+    assert.ok(Math.abs(sat.headingDeg - velHeading) < 1e-9, `velocity heading at ${t}`);
+    assert.ok(Math.abs(sat.pitchDeg - Math.atan2(vu, Math.hypot(ve, vn)) / DEG) < 1e-9, `velocity pitch at ${t}`);
+  }
+  const mid = exportLiveState(scenario, (tSpunUp + tBrake) / 2).satellites.interceptor;
+  assert.ok(Math.abs(mid.pointing.headingDeg - mid.headingDeg) > 1, 'the pointing heading is not the velocity heading');
+});
+
+test('the pointing axis is nadir before the slew, with a steady heading that runs on into the slew', () => {
+  for (const t of [-60, 0, tOrient - 1, tOrient]) {
+    const p = exportLiveState(scenario, t).satellites.interceptor.pointing;
+    assert.ok(Math.abs(p.pitchDeg + 90) < 1e-9, `nadir at ${t}: pitch ${p.pitchDeg}`);
+  }
+  const before = exportLiveState(scenario, tOrient - 0.01).satellites.interceptor.pointing;
+  const after = exportLiveState(scenario, tOrient + 0.01).satellites.interceptor.pointing;
+  assert.ok(Math.abs(before.headingDeg - after.headingDeg) < 0.01, `heading ${before.headingDeg} -> ${after.headingDeg}`);
+  assert.ok(after.pitchDeg > -90 && after.pitchDeg < -89.99, `the slew has just begun: pitch ${after.pitchDeg}`);
+});
+
+test('the slew turns the pointing axis 124.5 degrees and ends on the firing direction at release', () => {
+  const start = exportLiveState(scenario, tOrient).satellites.interceptor;
+  const end = exportLiveState(scenario, tRelease);
+  const sat = end.satellites.interceptor;
+  const a0 = eciAxis(start.pointing.headingDeg, start.pointing.pitchDeg, start, tOrient);
+  const a1 = eciAxis(sat.pointing.headingDeg, sat.pointing.pitchDeg, sat, tRelease);
+  assert.ok(Math.abs(a0.angleTo(a1) / DEG - E.slewAngleDeg) < 1e-6, `slew ${a0.angleTo(a1) / DEG} deg`);
+  assert.ok(Math.abs(E.slewAngleDeg - 124.5) < 0.1, `slew angle ${E.slewAngleDeg}`);
+  assert.ok(a1.distanceTo(E.departDir) < 1e-9, 'on the firing direction at release');
+  // The kill vehicle leaves along the same axis (3 m out of the tube, so its local frame is a
+  // few hundred-thousandths of a degree away).
+  assert.ok(Math.abs(sat.pointing.headingDeg - end.killVehicle.headingDeg) < 1e-4, 'heading matches the kill vehicle');
+  assert.ok(Math.abs(sat.pointing.pitchDeg - end.killVehicle.pitchDeg) < 1e-4, 'pitch matches the kill vehicle');
+  // And it holds the firing direction after the release.
+  const later = exportLiveState(scenario, tRelease + 300).satellites.interceptor;
+  assert.ok(eciAxis(later.pointing.headingDeg, later.pointing.pitchDeg, later, tRelease + 300).distanceTo(E.departDir) < 1e-9);
+});
+
+test('the thrusters fire while the slew spins up and while it brakes, pushing toward and then against the turn', () => {
+  const at = (t) => {
+    const sat = exportLiveState(scenario, t).satellites.interceptor;
+    const axis = enuOf(E.facingAt(t), sat, t);
+    return { ...sat.thrusters, axis, firing: enuOf(E.departDir, sat, t) };
+  };
+  for (const t of [-60, tOrient - 1, tOrient, (tSpunUp + tBrake) / 2, tRelease, tRelease + 1, tIntercept]) {
+    assert.deepEqual(exportLiveState(scenario, t).satellites.interceptor.thrusters, { level: 0, dirEnu: null }, `off at ${t}`);
+  }
+  for (const [t, sign] of [
+    [tOrient + 0.5, 1],
+    [(tOrient + tSpunUp) / 2, 1],
+    [tSpunUp - 0.5, 1],
+    [tBrake + 0.5, -1],
+    [(tBrake + tRelease) / 2, -1],
+    [tRelease - 0.5, -1],
+  ]) {
+    const s = at(t);
+    assert.equal(s.level, 1, `firing at ${t}`);
+    assert.ok(Math.abs(Math.hypot(...s.dirEnu) - 1) < 1e-9, `unit push at ${t}`);
+    assert.ok(Math.abs(dot3(s.dirEnu, s.axis)) < 1e-9, `push perpendicular to the axis at ${t}`);
+    assert.ok(sign * dot3(s.dirEnu, s.firing) > 0, `push ${sign > 0 ? 'toward' : 'against'} the firing direction at ${t}`);
+    // The scene's thruster puffs read the same level (states.js passes rcsAt through).
+    assert.equal(filmAt(t).interceptorSat.rcs, s.level, `film level at ${t}`);
+  }
+  for (let t = tOrient - 5; t <= tRelease + 5; t += 0.5) {
+    const { level, dirEnu } = exportLiveState(scenario, t).satellites.interceptor.thrusters;
+    assert.ok(level >= 0 && level <= 1, `level ${level} at ${t}`);
+    assert.equal(dirEnu === null, level === 0, `dirEnu present only while firing, at ${t}`);
+  }
+});
+
+test('the kill vehicle plume is on through its kick burn after release and off after', () => {
+  assert.equal(exportLiveState(scenario, tRelease - 0.01).killVehicle, null);
+  for (const t of [tRelease, tRelease + 0.01, tRelease + 0.5, tRelease + 1, tKvBurnEnd - 0.01]) {
+    assert.equal(exportLiveState(scenario, t).killVehicle.plume, 1, `burning at ${t}`);
+    // The film's own plume (at the release itself its time mapping rounds to just before it).
+    if (t > tRelease) assert.equal(filmAt(t).kv.plume, 1, `film burning at ${t}`);
+  }
+  for (const t of [tKvBurnEnd, tKvBurnEnd + 0.5, tRelease + 60, tIntercept - 1]) {
+    assert.equal(exportLiveState(scenario, t).killVehicle.plume, 0, `out at ${t}`);
+  }
+  assert.equal(E.kv.burnDuration, 2);
+  for (let t = tRelease; t < tRelease + 10; t += 0.1) {
+    const plume = exportLiveState(scenario, t).killVehicle.plume;
+    assert.ok(plume >= 0 && plume <= 1, `plume ${plume} at ${t}`);
+  }
+});
+
+test('the intercept effects are null before the intercept and after their envelope', () => {
+  for (const t of [-60, tRelease, tIntercept - 0.001, tIntercept + 3, tIntercept + 10]) {
+    assert.equal(exportLiveState(scenario, t).interceptFx, null, `no effects at ${t}`);
+  }
+  const fx = exportLiveState(scenario, tIntercept).interceptFx;
+  assert.deepEqual(fx, {
+    flash: { level: 0, diameterKm: 0 },
+    ring: { level: 0.9, diameterKm: 0 },
+    burst: { level: 1, count: 300, spreadKm: 0, pieceSizeKm: 0.12 },
+  });
+  const peak = exportLiveState(scenario, tIntercept + 0.3).interceptFx;
+  assert.ok(Math.abs(peak.flash.level - 1) < 1e-9 && Math.abs(peak.flash.diameterKm - 0.75) < 1e-9, 'flash peaks at 0.3 s');
+  const late = exportLiveState(scenario, tIntercept + 1.5).interceptFx;
+  assert.equal(late.flash, null, 'the flash is over at 1.5 s');
+  assert.equal(late.ring, null, 'the ring is over at 1.5 s');
+  assert.equal(late.burst.count, 300);
+  assert.equal(exportLiveState(scenario, tIntercept + 2).interceptFx.burst.spreadKm, 5);
+});
+
+test('the intercept effects carry the levels and sizes the visualization draws', () => {
+  let prev = null;
+  for (let t = tIntercept + 0.025; t < tIntercept + 3; t += 0.05) {
+    const fx = exportLiveState(scenario, t).interceptFx;
+    const film = filmAt(t).intercept;
+    assert.ok(fx && film.active, `active at ${t}`);
+    const drawn = interceptFxShape(film);
+    for (const key of ['flash', 'ring', 'burst']) {
+      if (!fx[key]) continue;
+      for (const [field, v] of Object.entries(drawn[key])) {
+        assert.ok(Math.abs(fx[key][field] - v) < 1e-9, `${key}.${field} at ${t}: ${fx[key][field]} vs ${v}`);
+      }
+      assert.ok(fx[key].level >= 0 && fx[key].level <= 1, `${key} level at ${t}`);
+    }
+    if (fx.flash) assert.ok(fx.flash.diameterKm >= 0 && fx.flash.diameterKm <= 0.75);
+    if (fx.ring) assert.ok(fx.ring.diameterKm >= 0 && fx.ring.diameterKm <= 3.75);
+    assert.ok(fx.burst.spreadKm >= 0 && fx.burst.spreadKm <= 5);
+    if (prev) {
+      assert.ok(fx.burst.level <= prev.burst.level, `burst fades at ${t}`);
+      assert.ok(fx.burst.spreadKm >= prev.burst.spreadKm, `burst spreads at ${t}`);
+      if (fx.ring && prev.ring) assert.ok(fx.ring.diameterKm >= prev.ring.diameterKm && fx.ring.level <= prev.ring.level, `ring at ${t}`);
+    }
+    prev = fx;
+  }
+  assert.ok(prev.burst.level < 1e-3, `the burst has faded by the end: ${prev.burst.level}`);
+});
+
+test('the new fields are fresh objects on every call', () => {
+  const t = tOrient + 10;
+  const a = exportLiveState(scenario, t);
+  a.satellites.interceptor.pointing.headingDeg = -1;
+  a.satellites.interceptor.thrusters.dirEnu[0] = 99;
+  const b = exportLiveState(scenario, t);
+  assert.notEqual(b.satellites.interceptor.pointing.headingDeg, -1);
+  assert.notEqual(b.satellites.interceptor.thrusters.dirEnu[0], 99);
+  const f = exportLiveState(scenario, tIntercept + 0.5);
+  f.interceptFx.flash.level = 99;
+  f.interceptFx.burst.count = 0;
+  const g = exportLiveState(scenario, tIntercept + 0.5);
+  assert.notEqual(g.interceptFx.flash.level, 99);
+  assert.equal(g.interceptFx.burst.count, 300);
 });
